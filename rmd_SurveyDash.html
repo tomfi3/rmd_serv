@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Head content -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draft AQAP Response Analysis</title>
+    <!-- Styles and scripts -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+    <style>
+        /* Styles */
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            height: 600px;
+            width: 80%;
+            margin-top: 20px;
+            justify-content: center;
+            display: none;
+        }
+        .legend {
+            line-height: 18px;
+            color: #555;
+            background: white;
+            padding: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .chart-container {
+            width: 30%;
+            margin: 10px;
+            display: inline-block;
+            padding: 15px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        #charts, #respondent-charts {
+            text-align: center;
+        }
+        #filters {
+            margin: 20px;
+            text-align: center;
+        }
+        .filter {
+            margin: 10px;
+        }
+        /* Styles for Deep Dive section */
+        #deep-dive {
+            margin: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 10px;
+        }
+        #deep-dive h1, #deep-dive h2, #deep-dive h3, #deep-dive h4, #deep-dive h5, #deep-dive h6 {
+            margin-top: 20px;
+        }
+        #deep-dive p {
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div id="info-box" style="text-align: center; padding: 10px; background: #f9f9f9; border-bottom: 1px solid #ddd;">
+        <h3>Total Responses: <span id="total-responses">0</span></h3>
+    </div>
+
+    <h2>Opinions on the Draft AQAP</h2>
+    <div id="filters">
+        <label class="filter" for="ageFilter">Age:</label>
+        <select id="ageFilter">
+            <option value="all">All</option>
+        </select>
+        <label class="filter" for="sexFilter">Sex:</label>
+        <select id="sexFilter">
+            <option value="all">All</option>
+        </select>
+        <label class="filter" for="capacityFilter">Capacity:</label>
+        <select id="capacityFilter">
+            <option value="all">All</option>
+        </select>
+        <button id="applyFilters">Apply Filters</button>
+    </div>
+    <div id="charts"></div>
+
+    <h2>Location of Respondents</h2>
+    <div id="map"></div>
+
+    <h2>Respondent Characteristics</h2>
+    <div id="respondent-charts"></div>
+
+    <div>
+        <!-- File upload element for the Survey CSV -->
+        <label for="surveyUpload">Upload Survey CSV:</label>
+        <input type="file" id="surveyUpload" accept=".csv"><br><br>
+    </div>
+
+    <h2>Deep Dive</h2>
+    <div id="deep-dive">
+        <!-- Deep Dive content will be inserted here -->
+    </div>
+
+    <button id="exportPdf" style="margin: 20px; padding: 10px; background-color: #007BFF; color: white; border: none; border-radius: 5px;">Export as PDF</button>
+
+    <script>
+        // Initialize the map
+        var map;
+        function initializeMap() {
+            console.log('Initializing map...');
+            map = L.map('map').setView([51.45, -0.33], 12);
+
+            // Load the base map tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: 'Map data &copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Add scale to the map
+            L.control.scale().addTo(map);
+        }
+
+        // Variables to hold data and states
+        var wardRespondentCounts = {};
+        var geoJsonData = null;
+        var postcodes = [];
+        var surveyData = [];
+        var filteredSurveyData = [];
+        var surveyDataLoaded = false;
+        var deepDiveContent = null;
+
+        // Function to check if all data is loaded and render the map
+        function checkAndRenderMap() {
+            console.log('Checking if data is ready to render map...');
+            console.log('GeoJSON data loaded:', !!geoJsonData);
+            console.log('Postcodes loaded:', postcodes.length > 0);
+            console.log('Survey data loaded:', surveyData.length > 0);
+
+            if (geoJsonData && postcodes.length > 0 && surveyData.length > 0) {
+                document.getElementById('map').style.display = 'block';
+                if (!map) {
+                    initializeMap();
+                }
+                renderMap();
+            }
+        }
+
+        // Load GeoJSON and Postcodes CSV from GitHub
+        fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/rmd_wardgeo.geojson')
+            .then(response => response.json())
+            .then(data => {
+                console.log('GeoJSON data loaded');
+                geoJsonData = data;
+                checkAndRenderMap();
+            })
+            .catch(error => console.error('Error loading GeoJSON:', error));
+
+        fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/rmd_postcodes.csv')
+            .then(response => response.text())
+            .then(csvText => {
+                console.log('Postcodes CSV loaded');
+                Papa.parse(csvText, {
+                    header: true,
+                    complete: function(results) {
+                        postcodes = results.data;
+                        checkAndRenderMap();
+                    }
+                });
+            })
+            .catch(error => console.error('Error loading Postcodes CSV:', error));
+
+        // Fetch the Deep Dive HTML content from GitHub
+        fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/deepDive.html')
+            .then(response => response.text())
+            .then(htmlContent => {
+                console.log('Deep Dive HTML content loaded');
+                deepDiveContent = htmlContent;
+                // Check if survey data has been loaded
+                if (surveyDataLoaded) {
+                    // Insert the content into the 'deep-dive' div
+                    document.getElementById('deep-dive').innerHTML = deepDiveContent;
+                }
+            })
+            .catch(error => console.error('Error loading Deep Dive HTML:', error));
+
+// File upload handler for survey data
+document.getElementById('surveyUpload').addEventListener('change', function(event) {
+    var file = event.target.files[0];
+    console.log('Survey CSV file selected:', file.name);
+
+    Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+            console.log('Survey data loaded');
+
+            // Step 1: Remove columns with "Analyst notes" in the header
+            const headers = results.meta.fields;
+            const filteredHeaders = headers.filter(header => 
+                !header.toLowerCase().includes("analyst notes") && // Exclude headers with "Analyst notes"
+                !header.toLowerCase().includes("- other") // Exclude headers with "other"
+            );
+
+            const filteredData = results.data.map(row => {
+                let newRow = {};
+                filteredHeaders.forEach(header => {
+                    newRow[header] = row[header]; // Keep only filtered headers
+                });
+                return newRow;
+            });
+
+            // Step 2: Clean the headers
+            const cleanedHeaders = filteredHeaders.map(header => {
+                // Extract before the first dash and after the second dash
+                let parts = header.split('-');
+                if (parts.length > 2) {
+                    return `${parts[0].trim()} ${parts[2].trim()}`; // Keep part before the first dash and after the second
+                }
+                return parts[0].trim(); // If one or no dashes, just keep the part before the first dash
+            }).map(cleanedHeader =>
+                cleanedHeader
+                    .replace(/\?\?+/g, '?') // Replace double or more question marks with a single '?'
+                    .replace(/[^\w\s?,:]/g, '') // Remove unsupported characters (except , and ?)
+            );
+
+            // Step 3: Apply cleaned headers to the data
+            const cleanedData = filteredData.map(row => {
+                let newRow = {};
+                cleanedHeaders.forEach((cleanedHeader, index) => {
+                    const originalHeader = filteredHeaders[index];
+                    newRow[cleanedHeader] = row[originalHeader]; // Map data to cleaned headers
+                });
+                return newRow;
+            });
+
+            // Step 4: Store cleaned data globally
+            surveyData = cleanedData;
+            filteredSurveyData = surveyData;
+            surveyDataLoaded = true;
+
+            // Trigger necessary updates
+            populateFilters();
+            renderSurveyCharts();
+            renderRespondentCharacteristics();
+            checkAndRenderMap();
+
+            // Insert deep dive content if loaded
+            if (deepDiveContent != null) {
+                document.getElementById('deep-dive').innerHTML = deepDiveContent;
+            }
+        }
+    });
+});
+
+
+
+
+        // Function to populate filter dropdowns
+        function populateFilters() {
+            console.log('Populating filters...');
+            var ageFilter = document.getElementById('ageFilter');
+            var sexFilter = document.getElementById('sexFilter');
+            var capacityFilter = document.getElementById('capacityFilter');
+
+            var ages = new Set();
+            var sexes = new Set();
+            var capacities = new Set();
+
+            surveyData.forEach(function(row) {
+                var age = row['What was your age last birthday?'] || '';
+                if (age.toLowerCase() === 'prefer not to say' || age.trim() === '' || age.toLowerCase() === 'not answered') {
+                    age = 'No Answer';
+                }
+                ages.add(age);
+
+                var sex = row['What is your sex?'] || '';
+                if (sex.toLowerCase() === 'prefer not to say' || sex.trim() === '') {
+                    sex = 'No Answer';
+                }
+                sexes.add(sex);
+
+                var capacity = row['What is the main capacity in which you are responding to this consultation?'] || '';
+                capacities.add(capacity.trim() ? capacity : 'No Answer');
+            });
+
+            // Clear existing options
+            ageFilter.innerHTML = '<option value="all">All</option>';
+            sexFilter.innerHTML = '<option value="all">All</option>';
+            capacityFilter.innerHTML = '<option value="all">All</option>';
+
+            Array.from(ages).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(function(age) {
+                var option = document.createElement('option');
+                option.value = age;
+                option.textContent = age;
+                ageFilter.appendChild(option);
+            });
+
+            Array.from(sexes).forEach(function(sex) {
+                var option = document.createElement('option');
+                option.value = sex;
+                option.textContent = sex;
+                sexFilter.appendChild(option);
+            });
+
+            capacities.forEach(function(capacity) {
+                var option = document.createElement('option');
+                option.value = capacity;
+                option.textContent = capacity;
+                capacityFilter.appendChild(option);
+            });
+            console.log('Filters populated');
+        }
+
+        // Function to apply filters
+        document.getElementById('applyFilters').addEventListener('click', function() {
+            console.log('Applying filters...');
+            var selectedAge = document.getElementById('ageFilter').value;
+            var selectedSex = document.getElementById('sexFilter').value;
+            var selectedCapacity = document.getElementById('capacityFilter').value;
+
+            filteredSurveyData = surveyData.filter(function(row) {
+                var age = row['What was your age last birthday?'] || '';
+                if (age.toLowerCase() === 'prefer not to say' || age.trim() === '' || age.toLowerCase() === 'not answered') {
+                    age = 'No Answer';
+                }
+
+                var sex = row['What is your sex?'] || '';
+                if (sex.toLowerCase() === 'prefer not to say' || sex.trim() === '' || sex.toLowerCase() === 'not answered') {
+                    sex = 'No Answer';
+                }
+
+                var capacity = row['What is the main capacity in which you are responding to this consultation?'] || 'No Answer';
+
+                var matchesAge = selectedAge === 'all' || age === selectedAge;
+                var matchesSex = selectedSex === 'all' || sex === selectedSex;
+                var matchesCapacity = selectedCapacity === 'all' || capacity === selectedCapacity;
+                return matchesAge && matchesSex && matchesCapacity;
+            });
+
+            console.log('Filtered survey data length:', filteredSurveyData.length);
+
+            renderSurveyCharts();
+            renderRespondentCharacteristics();
+            checkAndRenderMap();
+        });
+
+        // Function to process data and render the map
+        function renderMap() {
+            console.log('Rendering map...');
+            if (!geoJsonData || postcodes.length === 0 || filteredSurveyData.length === 0) {
+                console.log('Data not sufficient to render map.');
+                return;
+            }
+
+            wardRespondentCounts = {}; // Reset respondent counts
+
+            // Process survey postcodes and count respondents by ward
+            filteredSurveyData.forEach(function(row) {
+                var respondentPostcode = row["Please tell us your postcode:"];
+                var ward = postcodes.find(p => p.postcode === respondentPostcode);
+                if (ward) {
+                    wardRespondentCounts[ward.ward_name] = (wardRespondentCounts[ward.ward_name] || 0) + 1;
+                }
+                else {
+                    console.log('Unmatched postcode:', respondentPostcode);
+                }
+            });
+
+            console.log('Ward respondent counts:', wardRespondentCounts);
+
+            // Clear existing layers
+            map.eachLayer(function(layer) {
+                if (layer instanceof L.GeoJSON) {
+                    map.removeLayer(layer);
+                }
+            });
+            // Update total responses in the info box
+            document.getElementById('total-responses').textContent = surveyData.length - 1;
+
+            // Load the GeoJSON and style it based on respondent counts
+            var geoJsonLayer = L.geoJson(geoJsonData, {
+                style: function(feature) {
+                    var wardName = feature.properties.WD13NM; // Assuming WD13NM is the field for ward name
+                    var count = wardRespondentCounts[wardName] || 0;
+                    var fillColor = count > 10 ? '#006400' :
+                                    count > 5 ? '#228B22' :
+                                    count > 2 ? '#32CD32' :
+                                    count > 0 ? '#7FFF00' :
+                                    '#dbffa5';
+                    return {
+                        fillColor: fillColor,
+                        weight: 2,
+                        opacity: 1,
+                        color: 'white',
+                        dashArray: '3',
+                        fillOpacity: 0.7
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    var wardName = feature.properties.WD13NM;
+                    var count = wardRespondentCounts[wardName] || 0;
+                    layer.bindPopup('<b>' + wardName + '</b><br>Respondents: ' + count);
+                }
+            }).addTo(map);
+
+            // Remove existing legend if any
+            if (map.legendControl) {
+                map.removeControl(map.legendControl);
+            }
+
+            // Add legend to the map
+            var legend = L.control({position: 'topright'});
+
+            legend.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'legend');
+                div.innerHTML += '<i style="background: #006400"></i> > 10 respondents<br>';
+                div.innerHTML += '<i style="background: #228B22"></i> 6 - 10 respondents<br>';
+                div.innerHTML += '<i style="background: #32CD32"></i> 3 - 5 respondents<br>';
+                div.innerHTML += '<i style="background: #7FFF00"></i> 1 - 2 respondents<br>';
+                div.innerHTML += '<i style="background: #dbffa5"></i> 0 respondents<br>';
+                return div;
+            };
+
+            legend.addTo(map);
+            map.legendControl = legend;
+
+            console.log('Map rendered successfully.');
+        }
+
+        // Function to render survey bar charts
+        function renderSurveyCharts() {
+            console.log('Rendering survey charts...');
+            if (filteredSurveyData.length === 0) {
+                console.log('No data to render survey charts.');
+                return;
+            }
+
+            document.getElementById('charts').innerHTML = ''; // Clear existing charts
+
+            var agreeDisagreeQuestions = [
+                "To what extent do you agree or disagree with the overall strategy of targeting action on the areas of highest pollution and exposure, and the groups of people who will most benefit from reduced air pollution exposure?",
+                "To what extent do you agree or disagree with the locations targeted for action?",
+                "To what extent do you agree or disagree with the actions proposed in these target locations?",
+                "To what extent do you agree or disagree with the transport measures outlined for the target locations?",
+                "To what extent do you agree or disagree with the groups of people targeted for action?",
+                "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Tacking Climate Action and Air Quality Action Together",
+                "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Active Travel and Transport",
+                "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Planning and Development",
+                "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Community Engagement and Education: Empowering Residents to Improve Air Quality",
+                "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Our Green Spaces and Amenities",
+                "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: The Future of Air Pollution in Richmond"
+            ];
+
+            var chartTitles = [
+                "Overall Strategy of Targeting Actions",
+                "Location Targeted for Actions",
+                "Actions Proposed in Targeted Locations",
+                "Transport Measures for Target Locations",
+                "Groups of People Targeted",
+                "Tackling Climate Action and Air Quality Action Together",
+                "Active Travel and Transport",
+                "Planning and Development",
+                "Community Engagement and Education: Empowering Residents to Improve Air Quality",
+                "Our Green Spaces and Amenities",
+                "The Future of Air Pollution in Richmond"
+            ];
+
+            agreeDisagreeQuestions.forEach(function(question, index) {
+                var agreeDisagreeCounts = {
+                    'Strongly Disagree': 0,
+                    'Disagree': 0,
+                    'Neither Agree nor Disagree': 0,
+                    'Agree': 0,
+                    'Strongly Agree': 0,
+                    'Not Answered': 0
+                };
+
+                filteredSurveyData.forEach(function(row) {
+                    var response = (row[question] || '').trim().toLowerCase();
+                    switch (response) {
+                        case 'strongly agree':
+                            agreeDisagreeCounts['Strongly Agree']++;
+                            break;
+                        case 'agree':
+                            agreeDisagreeCounts['Agree']++;
+                            break;
+                        case 'neither agree nor disagree':
+                        case 'neither agree or disagree':
+                            agreeDisagreeCounts['Neither Agree nor Disagree']++;
+                            break;
+                        case 'disagree':
+                            agreeDisagreeCounts['Disagree']++;
+                            break;
+                        case 'strongly disagree':
+                            agreeDisagreeCounts['Strongly Disagree']++;
+                            break;
+                        case 'not answered':
+                        case "don't know / no opinion":
+                        case 'prefer not to say':
+                            agreeDisagreeCounts['Not Answered']++;
+                            break;
+                        default:
+                            agreeDisagreeCounts['Not Answered']++;
+                    }
+                });
+
+                // Create chart container
+                var chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
+                chartContainer.innerHTML = '<h4>' + chartTitles[index] + '</h4><canvas id="chart' + index + '"></canvas>';
+                document.getElementById('charts').appendChild(chartContainer);
+
+                // Create chart data
+                var ctx = document.getElementById('chart' + index).getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Strongly Disagree', 'Disagree', 'Neither Agree nor Disagree', 'Agree', 'Strongly Agree', 'Not Answered'],
+                        datasets: [{
+                            label: '# of Responses',
+                            data: [
+                                agreeDisagreeCounts['Strongly Disagree'],
+                                agreeDisagreeCounts['Disagree'],
+                                agreeDisagreeCounts['Neither Agree nor Disagree'],
+                                agreeDisagreeCounts['Agree'],
+                                agreeDisagreeCounts['Strongly Agree'],
+                                agreeDisagreeCounts['Not Answered']
+                            ],
+                            backgroundColor: [
+                                '#F44336',
+                                '#FF5722',
+                                '#2196F3',
+                                '#8BC34A',
+                                '#4CAF50',
+                                '#9E9E9E'
+                            ],
+                            borderColor: [
+                                '#D32F2F',
+                                '#E64A19',
+                                '#1976D2',
+                                '#689F38',
+                                '#388E3C',
+                                '#616161'
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false // Disables the legend
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                suggestedMax: Math.max(...Object.values(agreeDisagreeCounts)) + 5 // Ensure same scale across charts
+                            }
+                        }
+                    }
+                });
+            });
+            console.log('Survey charts rendered.');
+        }
+
+        // Function to render respondent characteristics charts
+        function renderRespondentCharacteristics() {
+            console.log('Rendering respondent characteristics charts...');
+            if (filteredSurveyData.length === 0) {
+                console.log('No data to render respondent characteristics charts.');
+                return;
+            }
+
+            document.getElementById('respondent-charts').innerHTML = ''; // Clear existing respondent charts
+
+            var respondentQuestions = [
+                "What is the main capacity in which you are responding to this consultation?",
+                "What was your age last birthday?",
+                "What is your sex?",
+                "What is your ethnic group?"
+            ];
+
+            respondentQuestions.forEach(function(question, index) {
+                var respondentCounts = {};
+
+                filteredSurveyData.forEach(function(row) {
+                    var response = (row[question] || '').trim();
+                    if (question === "What was your age last birthday?" && (response.toLowerCase() === 'prefer not to say' || response.trim() === '' || response.toLowerCase() === 'not answered')) {
+                        response = 'No Answer';
+                    } else if (question === "What is your sex?" && (response.toLowerCase() === 'prefer not to say' || response.trim() === '' || response.toLowerCase() === 'not answered')) {
+                        response = 'No Answer';
+                    }
+                    else if (question === "What is your ethnic group?" && (response.toLowerCase() === 'prefer not to say' || response.trim() === '' || response.toLowerCase() === 'not answered')) {
+                        response = 'No Answer';
+                    }
+                    respondentCounts[response] = (respondentCounts[response] || 0) + 1;
+                });
+
+                // Sort the age responses numerically if applicable
+                var sortedLabels = Object.keys(respondentCounts);
+                if (question === "What was your age last birthday?") {
+                    sortedLabels = sortedLabels.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                }
+
+                // Create chart container
+                var chartContainer = document.createElement('div');
+                chartContainer.className = 'chart-container';
+                chartContainer.innerHTML = '<h4>' + question + '</h4><canvas id="respondentChart' + index + '"></canvas>';
+                document.getElementById('respondent-charts').appendChild(chartContainer);
+
+                // Create chart data
+                var ctx = document.getElementById('respondentChart' + index).getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: sortedLabels,
+                        datasets: [{
+                            label: '# of Responses',
+                            data: sortedLabels.map(label => respondentCounts[label]),
+                            backgroundColor: '#2196F3',
+                            borderColor: '#1976D2',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                suggestedMax: Math.max(...Object.values(respondentCounts)) + 5
+                            }
+                        }
+                    }
+                });
+            });
+            console.log('Respondent characteristics charts rendered.');
+        }
+
+        document.getElementById('exportPdf').addEventListener('click', async function() {
+            const { jsPDF } = window.jspdf;
+
+            // Create a new jsPDF instance
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4',
+            });
+
+            // Select the content to export
+            const content = document.body;
+
+            // Use html2canvas with special options to capture charts and dynamic content
+            const canvas = await html2canvas(content, {
+                scale: 2, // Higher scale for better quality
+                useCORS: true, // Allow cross-origin images (if any)
+                allowTaint: true, // Allow tainted canvas
+                logging: true, // Enable logging for debugging
+                backgroundColor: '#ffffff', // Set background color to white
+                onclone: (clonedDoc) => {
+                    // Fix canvas-related issues
+                    const charts = clonedDoc.querySelectorAll('canvas');
+                    charts.forEach((chart) => {
+                        const srcCanvas = document.querySelector(`#${chart.id}`);
+                        const ctx = chart.getContext('2d');
+                        ctx.drawImage(srcCanvas, 0, 0); // Redraw original chart canvas
+                    });
+                },
+            });
+
+            // Convert canvas to image
+            const imgData = canvas.toDataURL('image/png');
+
+            // Calculate image dimensions for A4
+            const imgWidth = 210; // A4 width in mm
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            // Add the image to the PDF
+            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+
+            // Save the PDF
+            pdf.save('Draft_AQAP_Response_Analysis.pdf');
+        });
+    </script>
+</body>
+</html>
