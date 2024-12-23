@@ -1,0 +1,39 @@
+Question,Group,Percentage
+Age,<20,0
+Age,20-24,3
+Age,25-34,4
+Age,35-44,2
+Age,45-54,2
+Age,55-64,1
+Age,65-75,0
+Age,75+,0
+Religiton,Christian ,0
+Religiton,Buddhist,0
+Religiton,Hindu,0
+Religiton,Jewish,0
+Religiton,Muslim,0
+Religiton,Sikh,0
+Religiton,Other religion,0
+Ethnicity,Asian or Asian British,1
+Ethnicity, Black/African/Caribbean/Black British,0
+Ethnicity,Mixed/multiple ethnic groups,0
+Ethnicity,White,6
+Ethnicity,Other ethnic group,0
+Disability,Yes,2
+Disability,No,7
+Sex,Male,4
+Sex,Female,4
+Postcode,KT2 5TB,1
+Postcode,TW10 7PL,1
+Postcode,KT2 5QE,1
+Postcode,TW10 7QT,1
+Postcode,TW10 7NL,1
+Postcode,TW1 4RG,1
+Postcode,TW11 8PA,1
+Postcode,TW3 2BL,
+Postcode,TW2 6JL,1
+Postcode,TW11 8DP,1
+Postcode,TW9 2AJ,1
+Postcode,SW13 9LH,1
+Postcode,SW14 8RG,1
+Postcode,TW19 3DE,1
