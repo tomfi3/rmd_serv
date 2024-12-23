@@ -1,0 +1,25 @@
+Question,Group,Percentage
+Age,<20,24.2
+Age,20-24,4.2
+Age,25-34,11.3
+Age,35-44,15.7
+Age,45-54,16.2
+Age,55-64,12.2
+Age,65-75,8.7
+Age,75+,7.4
+Religiton,Christian ,45.3
+Religiton,Buddhist,0.8
+Religiton,Hindu,2.1
+Religiton,Jewish,0.6
+Religiton,Muslim,4.3
+Religiton,Sikh,1
+Religiton,Other religion,0.7
+Ethnicity,Asian or Asian British,8.9
+Ethnicity, Black/African/Caribbean/Black British,1.9
+Ethnicity,Mixed/multiple ethnic groups,5.5
+Ethnicity,White,80.5
+Ethnicity,Other ethnic group,3.3
+Disability,Yes,12
+Disability,No,82
+Sex,Male,48.1
+Sex,Female,51.9
