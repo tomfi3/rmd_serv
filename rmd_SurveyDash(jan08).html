@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Required meta -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Draft AQAP Response Analysis</title>
+
+  <!-- Tailwind (for quick demonstration) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS + JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+  <!-- PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+
+  <!-- Chart.js + DataLabels -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+
+  <!-- jsPDF + html2canvas for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  
+  <style>
+    /* Example of minimal custom styling mixed with Tailwind classes */
+
+    /* Map resizing in "pdf-resize" mode */
+    .pdf-resize #map {
+      height: 500px !important;
+    }
+
+    .pdf-resize h4 {
+      margin-bottom: 0;
+    }
+
+    /* Flexbox for bar charts in the main chart section */
+    #charts {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    /* Flexbox for respondent charts */
+    #respondent-charts {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin: 0 auto; /* Center the content */
+    }
+
+    /* General styling for individual chart containers */
+    .chart-container,
+    .radar-chart-container {
+      flex: 1;
+      max-width: 45%; /* Restrict individual chart containers to fit side by side */
+      min-width: 450px;
+      padding: 10px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Ensure charts scale well */
+    .chart-container canvas,
+    .radar-chart-container canvas {
+      max-width: 100%;
+      height: auto;
+    }
+
+    #radar-charts {
+      display: flex; /* Enable flexbox layout */
+      justify-content: center; /* Center the charts horizontally */
+      gap: 20px; /* Add some space between the charts */
+      flex-wrap: wrap; /* Allow wrapping to the next line if needed */
+    }
+
+    .radar-chart-container {
+      flex: 1; /* Make containers share available space equally */
+      max-width: 45%; /* Ensure the containers are not too wide */
+      padding: 10px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    .radar-chart-container canvas {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .pdf-resize .radar-chart-container {
+      width: 500px !important;
+      height: 280px !important;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      box-shadow: none;
+      position: relative;
+    }
+    .pdf-resize .radar-chart-container canvas {
+      width: 500px !important;
+      height: 280px !important;
+      display: block;
+      margin: auto;
+      box-shadow: none;
+    }
+
+    .pdf-resize .chart-container {
+      width: 600px !important;
+      margin: 10px auto;
+      height: auto;
+      min-height: 250px;
+      box-shadow: none;
+    }
+
+    /* === NEW TIMELINE CODE START === */
+    /* Timeline chart container styling + PDF-resize rules */
+    .timeline-chart-container {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      padding: 10px;
+      width: 100%;
+      max-width: 900px;
+      min-height: 300px;
+      margin: 0 auto;
+    }
+
+    .pdf-resize .timeline-chart-container {
+      width: 700px !important;
+      margin: 0 auto;
+    }
+    .pdf-resize .timeline-chart-container canvas {
+      width: 650px !important;
+      height: 300px !important;
+    }
+    /* === NEW TIMELINE CODE END === */
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  
+  <!-- Header / Info Box -->
+  <div 
+    id="info-box" 
+    class="w-full bg-white border-b border-gray-200 py-4 text-center mb-4"
+  >
+    <h3 class="text-xl font-semibold">
+      Total Responses: <span id="total-responses" class="font-bold">0</span>
+    </h3>
+  </div>
+
+  <!-- Filters container (using shadcn/ui-like card + form styling) -->
+  <div 
+    id="filters" 
+    class="flex flex-wrap items-center justify-center gap-4 bg-white p-4 mx-auto w-full max-w-5xl rounded-lg shadow mb-6"
+  >
+    <div class="flex flex-col">
+      <label for="ageFilter" class="text-sm font-medium mb-1">Age:</label>
+      <select 
+        id="ageFilter" 
+        class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+      >
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <div class="flex flex-col">
+      <label for="sexFilter" class="text-sm font-medium mb-1">Sex:</label>
+      <select 
+        id="sexFilter"
+        class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+      >
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <div class="flex flex-col">
+      <label for="capacityFilter" class="text-sm font-medium mb-1">Capacity:</label>
+      <select 
+        id="capacityFilter"
+        class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+      >
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <!-- // WARD FILTER ADDITION START -->
+    <div class="flex flex-col">
+      <label for="wardFilter" class="text-sm font-medium mb-1">Ward:</label>
+      <select 
+        id="wardFilter" 
+        class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+      >
+        <option value="all">All</option>
+      </select>
+    </div>
+    <!-- // WARD FILTER ADDITION END -->
+
+    <button 
+      id="applyFilters" 
+      class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+    >
+      Apply Filters
+    </button>
+  </div>
+
+  <!-- Page content container -->
+  <div class="mx-auto w-full max-w-7xl px-4">
+
+    <!-- === NEW TIMELINE CODE START === -->
+    <!-- Timeline Section (below the map, above Respondent Characteristics) -->
+    <h2 class="text-2xl font-bold text-gray-700 mb-2">Response Timeline</h2>
+    <div 
+      id="timeline-section"
+      class="bg-white p-4 rounded-lg shadow mb-8"
+    >
+      <div class="flex items-center gap-2">
+        <label 
+          class="text-sm font-medium"
+          for="timelineQuestionSelector"
+        >
+          Select a question to see positivity over time:
+        </label>
+        <select 
+          id="timelineQuestionSelector"
+          class="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none"
+        >
+          <option value="">(Show weekly response count)</option>
+          <!-- We'll fill the question options dynamically in the script below -->
+        </select>
+      </div>
+      <div class="timeline-chart-container mt-4">
+        <canvas id="timelineChart"></canvas>
+      </div>
+    </div>
+    <!-- === NEW TIMELINE CODE END === -->
+
+    <!-- Heading for Opinions -->
+    <h2 class="text-2xl font-bold text-gray-700 mb-2">Opinions on the Draft AQAP</h2>
+    <!-- Radar Charts container -->
+    <div id="radar-charts" class="flex flex-wrap gap-4 mb-6"></div>
+
+    <!-- Bar Charts container -->
+    <div id="charts" class="flex flex-wrap gap-4 mb-8"></div>
+
+    <!-- Map heading -->
+    <h2 class="text-2xl font-bold text-gray-700 mb-2">Location of Respondents</h2>
+    <div 
+      id="map"
+      class="w-full h-[600px] hidden mb-8 rounded-lg overflow-hidden"
+    ></div>
+
+    <!-- Respondent Characteristics heading -->
+    <h2 class="text-2xl font-bold text-gray-700 mb-2">Respondent Characteristics</h2>
+    <div id="respondent-charts" class="flex flex-wrap gap-4 mb-8"></div>
+
+    <!-- Deep Dive section -->
+    <h2 class="text-2xl font-bold text-gray-700 mb-2">Deep Dive</h2>
+    <div 
+      id="deep-dive"
+      class="bg-white rounded-lg shadow p-4 mb-8"
+    >
+      <!-- Deep Dive content will be inserted here -->
+    </div>
+
+    <!-- File upload elements -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap gap-4">
+      <div class="flex flex-col">
+        <label for="surveyUpload" class="text-sm font-medium mb-1">
+          Upload Survey CSV:
+        </label>
+        <input 
+          type="file" 
+          id="surveyUpload" 
+          accept=".csv"
+          class="file:mr-4 file:py-2 file:px-4
+                 file:rounded-full file:border-0
+                 file:text-sm file:font-semibold
+                 file:bg-blue-50 file:text-blue-700
+                 hover:file:bg-blue-100"
+        />
+      </div>
+
+      <div class="flex flex-col">
+        <label for="paperDemosUpload" class="text-sm font-medium mb-1">
+          Upload paper characteristics:
+        </label>
+        <input 
+          type="file" 
+          id="paperDemosUpload" 
+          accept=".csv"
+          class="file:mr-4 file:py-2 file:px-4
+                 file:rounded-full file:border-0
+                 file:text-sm file:font-semibold
+                 file:bg-blue-50 file:text-blue-700
+                 hover:file:bg-blue-100"
+        />
+      </div>
+    </div>
+
+    <!-- Buttons for resizing page -->
+    <div class="flex gap-4 mb-10">
+      <button 
+        id="resizePage" 
+        class="inline-flex items-center justify-center rounded-md bg-green-600 px-4 py-2 text-white text-sm font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-200"
+      >
+        Resize Page for Print
+      </button>
+      <button 
+        id="restorePage" 
+        class="inline-flex items-center justify-center rounded-md bg-gray-400 px-4 py-2 text-white text-sm font-medium hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-200"
+      >
+        Restore Original Size
+      </button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script>
+    // --- 1) Register the DataLabels plugin with Chart.js globally
+    Chart.register(ChartDataLabels);
+
+    // -------------------------------------------------------------------
+    // 1) Global variables for optional paper-based data + borough data
+    // -------------------------------------------------------------------
+    let paperDemographics = [];
+    let boroughDemographics = {};
+
+    // -------------------------------------------------------------------
+    // 2) Paper-based Demographics Upload
+    // -------------------------------------------------------------------
+    document.getElementById('paperDemosUpload').addEventListener('change', function(event) {
+      const file = event.target.files[0];
+      if (!file) {
+        console.log('No Paper Demos file selected.');
+        return;
+      }
+      console.log('Paper Demos CSV file selected:', file.name);
+
+      Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+          paperDemographics = results.data; 
+          console.log('Paper demographics loaded:', paperDemographics);
+
+          // Re-render the map & demographics charts
+          checkAndRenderMap(); 
+          renderRespondentCharacteristics();
+          // Also re-render timeline chart
+          renderTimelineChart();
+        },
+        error: function(err) {
+          console.error('Error parsing Paper Demos CSV:', err);
+        }
+      });
+    });
+
+    // -------------------------------------------------------------------
+    // 3) Load Borough Demographics from GitHub CSV
+    // -------------------------------------------------------------------
+    function loadBoroughDemographics() {
+      return fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/rmd_demographics.csv')
+        .then(response => response.text())
+        .then(csvText => {
+          return new Promise((resolve, reject) => {
+            Papa.parse(csvText, {
+              header: true,
+              complete: function(results) {
+                // Each row has { Question, Group, Percentage }
+                results.data.forEach(row => {
+                  const question = row.Question?.trim();
+                  const group = row.Group?.trim();
+                  const pct = parseFloat(row.Percentage);
+
+                  if (!boroughDemographics[question]) {
+                    boroughDemographics[question] = {};
+                  }
+                  boroughDemographics[question][group] = pct;
+                });
+                resolve();
+              },
+              error: function(err) {
+                reject(err);
+              }
+            });
+          });
+        });
+    }
+
+    loadBoroughDemographics()
+      .then(() => {
+        console.log("Borough demographics loaded:", boroughDemographics);
+      })
+      .catch(error => console.error('Error loading borough demographics:', error));
+
+    // -------------------------------------------------------------------
+    // 4) Helper functions to map Age, Sex, Ethnicity to consistent brackets
+    // -------------------------------------------------------------------
+    function mapAgeToBracket(ageString) {
+      if (!ageString || ageString.toLowerCase().includes("prefer not") || ageString.toLowerCase().includes("no answer")) {
+        return "No Answer / Other";
+      }
+      const numericAge = parseInt(ageString, 10);
+      if (!isNaN(numericAge)) {
+        if (numericAge < 20) return "<20";
+        if (numericAge >= 20 && numericAge <= 24) return "20-24";
+        if (numericAge >= 25 && numericAge <= 34) return "25-34";
+        if (numericAge >= 35 && numericAge <= 44) return "35-44";
+        if (numericAge >= 45 && numericAge <= 54) return "45-54";
+        if (numericAge >= 55 && numericAge <= 64) return "55-64";
+        if (numericAge >= 65 && numericAge <= 74) return "65-75";
+        if (numericAge >= 75) return "75+";
+        return "No Answer / Other"; 
+      }
+      let cleaned = ageString.replace(/\s/g, '').toLowerCase(); 
+      if (cleaned === "35-44") return "35-44";
+      return "No Answer / Other";
+    }
+
+    function mapSexToCensusCategory(sexString) {
+      if (!sexString) return "No Answer / Other";
+      const val = sexString.toLowerCase();
+      if (val === "male") return "Male";
+      if (val === "female") return "Female";
+      return "No Answer / Other";
+    }
+
+    function mapEthnicityToCensusCategory(ethString) {
+      if (!ethString) return "No Answer / Other";
+      let val = ethString.toLowerCase();
+      if (val.includes("white")) return "White";
+      if (val.includes("asian")) return "Asian or Asian British";
+      if (val.includes("black")) return " Black/African/Caribbean/Black British";
+      if (val.includes("mixed")) return "Mixed/multiple ethnic groups";
+      return "No Answer / Other";
+    }
+    
+    function isAnyFilterActive() {
+      // If any of these filter dropdowns ≠ "all," then filters are in use
+      const age = document.getElementById('ageFilter').value;
+      const sex = document.getElementById('sexFilter').value;
+      const capacity = document.getElementById('capacityFilter').value;
+      const ward = document.getElementById('wardFilter').value;
+
+      return (
+        age !== 'all' ||
+        sex !== 'all' ||
+        capacity !== 'all' ||
+        ward !== 'all'
+      );
+    }
+
+
+    // -------------------------------------------------------------------
+    // 5) Map setup and data variables
+    // -------------------------------------------------------------------
+    var map;
+    var wardRespondentCounts = {};
+    var geoJsonData = null;
+    var postcodes = [];
+    var surveyData = [];
+    var filteredSurveyData = [];
+    var surveyDataLoaded = false;
+    var deepDiveContent = null;
+
+    // Check data readiness for the map
+    function checkAndRenderMap() {
+      console.log('Checking if data is ready to render map...');
+      console.log('GeoJSON data loaded:', !!geoJsonData);
+      console.log('Postcodes loaded:', postcodes.length > 0);
+      console.log('Survey data loaded:', surveyData.length > 0);
+
+      if (geoJsonData && postcodes.length > 0 && surveyData.length > 0) {
+        document.getElementById('map').classList.remove('hidden');
+        if (!map) {
+          initializeMap();
+        }
+        renderMap();
+      }
+    }
+
+    // Initialize the Leaflet map
+    function initializeMap() {
+      console.log('Initializing map...');
+      map = L.map('map').setView([51.45, -0.33], 12);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: 'Map data &copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      L.control.scale().addTo(map);
+    }
+
+    function drillDownWard(wardName) {
+      console.log("Drilling down to ward:", wardName);
+      //Set the <select id="wardFilter"> to the chosen wardName
+      // Trigger the same logic as the user clicking "Apply Filters"
+      // (assuming your "applyFilters" button calls `document.getElementById('applyFilters').click()`
+      //  or you can directly call the same code that does the filtering)
+      const wardSelect = document.getElementById('wardFilter');
+      wardSelect.value = wardName;
+      document.getElementById('applyFilters').click();
+    }
+
+
+    // -------------------------------------------------------------------
+    // 6) Load GeoJSON and Postcodes from GitHub
+    // -------------------------------------------------------------------
+    fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/rmd_wardgeo.geojson')
+      .then(response => response.json())
+      .then(data => {
+        console.log('GeoJSON data loaded');
+        geoJsonData = data;
+        checkAndRenderMap();
+      })
+      .catch(error => console.error('Error loading GeoJSON:', error));
+
+    fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/rmd_postcodes.csv')
+      .then(response => response.text())
+      .then(csvText => {
+        Papa.parse(csvText, {
+          header: true,
+          complete: function(results) {
+            postcodes = results.data;
+            console.log('Postcodes CSV loaded:', postcodes.length);
+            checkAndRenderMap();
+          }
+        });
+      })
+      .catch(error => console.error('Error loading Postcodes CSV:', error));
+
+    // -------------------------------------------------------------------
+    // 7) Deep Dive HTML load
+    // -------------------------------------------------------------------
+    fetch('https://raw.githubusercontent.com/tomfi3/rmd_serv/main/deepDive.html')
+      .then(response => response.text())
+      .then(htmlContent => {
+        deepDiveContent = htmlContent;
+        if (surveyDataLoaded) {
+          document.getElementById('deep-dive').innerHTML = deepDiveContent;
+        }
+      })
+      .catch(error => console.error('Error loading Deep Dive HTML:', error));
+
+    // -------------------------------------------------------------------
+    // 8) Survey CSV upload
+    // -------------------------------------------------------------------
+    document.getElementById('surveyUpload').addEventListener('change', function(event) {
+      var file = event.target.files[0];
+      console.log('Survey CSV file selected:', file.name);
+
+      Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+          console.log('Survey data loaded');
+          // Step 1: Remove columns with "Analyst notes" or "- other" from headers
+          const headers = results.meta.fields;
+          const filteredHeaders = headers.filter(header => 
+            !header.toLowerCase().includes("analyst notes") &&
+            !header.toLowerCase().includes("- other")
+          );
+
+          const filteredData = results.data.map(row => {
+            let newRow = {};
+            filteredHeaders.forEach(header => {
+              newRow[header] = row[header]; 
+            });
+            return newRow;
+          });
+
+          // Step 2: Clean the headers
+          const cleanedHeaders = filteredHeaders.map(header => {
+            let parts = header.split('-');
+            if (parts.length > 2) {
+              return `${parts[0].trim()} ${parts[2].trim()}`;
+            }
+            return parts[0].trim();
+          }).map(cleanedHeader =>
+            cleanedHeader
+              .replace(/\?\?+/g, '?')
+              .replace(/[^\w\s?,:]/g, '')
+          );
+
+          // Step 3: Apply cleaned headers
+          const cleanedData = filteredData.map(row => {
+            let newRow = {};
+            cleanedHeaders.forEach((cleanedHeader, index) => {
+              const originalHeader = filteredHeaders[index];
+              newRow[cleanedHeader] = row[originalHeader]; 
+            });
+            return newRow;
+          });
+
+          surveyData = cleanedData;
+          filteredSurveyData = surveyData;
+          surveyDataLoaded = true;
+
+          // Trigger updates
+          populateFilters();
+          renderSurveyCharts();
+          renderRespondentCharacteristics();
+          checkAndRenderMap();
+
+          // === NEW TIMELINE CODE: also initialize timeline chart
+          buildTimelineQuestionDropdown(); 
+          renderTimelineChart();
+
+          if (deepDiveContent != null) {
+            document.getElementById('deep-dive').innerHTML = deepDiveContent;
+          }
+        }
+      });
+    });
+
+    // -------------------------------------------------------------------
+    // 9) Filter controls
+    // -------------------------------------------------------------------
+    function populateFilters() {
+      console.log('Populating filters...');
+      var ageFilter = document.getElementById('ageFilter');
+      var sexFilter = document.getElementById('sexFilter');
+      var capacityFilter = document.getElementById('capacityFilter');
+
+      // WARD FILTER ADDITION START
+      var wardFilter = document.getElementById('wardFilter');
+      var wardSet = new Set();
+      // We'll fill wardSet by scanning your postcodes array (which has ward_name)
+      postcodes.forEach(pc => {
+        if (pc.ward_name && pc.ward_name.trim() !== "") {
+          wardSet.add(pc.ward_name.trim());
+        }
+      });
+      // WARD FILTER ADDITION END
+
+      var ages = new Set();
+      var sexes = new Set();
+      var capacities = new Set();
+
+      surveyData.forEach(function(row) {
+        var age = row['What was your age last birthday?'] || '';
+        if (age.toLowerCase() === 'prefer not to say' || age.trim() === '' || age.toLowerCase() === 'not answered') {
+          age = 'No Answer';
+        }
+        ages.add(age);
+
+        var sex = row['What is your sex?'] || '';
+        if (sex.toLowerCase() === 'prefer not to say' || sex.trim() === '' || sex.toLowerCase() === 'not answered') {
+          sex = 'No Answer';
+        }
+        sexes.add(sex);
+
+        var capacity = row['What is the main capacity in which you are responding to this consultation?'] || '';
+        capacities.add(capacity.trim() ? capacity : 'No Answer');
+      });
+
+      // Clear existing options
+      ageFilter.innerHTML = '<option value="all">All</option>';
+      sexFilter.innerHTML = '<option value="all">All</option>';
+      capacityFilter.innerHTML = '<option value="all">All</option>';
+
+      // WARD FILTER ADDITION START
+      wardFilter.innerHTML = '<option value="all">All</option>';
+      // Convert set to array and sort ward names
+      Array.from(wardSet).sort().forEach(ward => {
+        var opt = document.createElement('option');
+        opt.value = ward;
+        opt.textContent = ward;
+        wardFilter.appendChild(opt);
+      });
+      // WARD FILTER ADDITION END
+
+      Array.from(ages).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .forEach(function(age) {
+          var option = document.createElement('option');
+          option.value = age;
+          option.textContent = age;
+          ageFilter.appendChild(option);
+        });
+
+      Array.from(sexes).forEach(function(sex) {
+        var option = document.createElement('option');
+        option.value = sex;
+        option.textContent = sex;
+        sexFilter.appendChild(option);
+      });
+
+      capacities.forEach(function(capacity) {
+        var option = document.createElement('option');
+        option.value = capacity;
+        option.textContent = capacity;
+        capacityFilter.appendChild(option);
+      });
+      console.log('Filters populated');
+    }
+
+    document.getElementById('applyFilters').addEventListener('click', function() {
+      console.log('Applying filters...');
+      var selectedAge = document.getElementById('ageFilter').value;
+      var selectedSex = document.getElementById('sexFilter').value;
+      var selectedCapacity = document.getElementById('capacityFilter').value;
+
+      // WARD FILTER ADDITION START
+      var selectedWard = document.getElementById('wardFilter').value;
+      // WARD FILTER ADDITION END
+
+      filteredSurveyData = surveyData.filter(function(row) {
+        var age = row['What was your age last birthday?'] || '';
+        if (age.toLowerCase() === 'prefer not to say' || age.trim() === '' || age.toLowerCase() === 'not answered') {
+          age = 'No Answer';
+        }
+
+        var sex = row['What is your sex?'] || '';
+        if (sex.toLowerCase() === 'prefer not to say' || sex.trim() === '' || sex.toLowerCase() === 'not answered') {
+          sex = 'No Answer';
+        }
+
+        var capacity = row['What is the main capacity in which you are responding to this consultation?'] || 'No Answer';
+
+        // WARD FILTER ADDITION START
+        // 1) Grab the row's postcode input
+        const rawPostcode = (row["Please tell us your postcode:"] || '').trim().toLowerCase();
+        // 2) Find if there's a match in our postcodes array
+        let matchedWard = null;
+        if (rawPostcode) {
+          matchedWard = postcodes.find(
+            p => p.postcode?.toLowerCase() === rawPostcode
+          );
+        }
+        // If not found, rowWard can be "No Ward" or something similar
+        let rowWard = matchedWard ? matchedWard.ward_name : 'No Ward';
+        // WARD FILTER ADDITION END
+
+        var matchesAge = (selectedAge === 'all' || age === selectedAge);
+        var matchesSex = (selectedSex === 'all' || sex === selectedSex);
+        var matchesCapacity = (selectedCapacity === 'all' || capacity === selectedCapacity);
+
+        // WARD FILTER ADDITION START
+        var matchesWard = (selectedWard === 'all' || rowWard === selectedWard);
+        return matchesAge && matchesSex && matchesCapacity && matchesWard;
+        // WARD FILTER ADDITION END
+      });
+
+      console.log('Filtered survey data length:', filteredSurveyData.length);
+
+      renderSurveyCharts();
+      renderRespondentCharacteristics();
+      checkAndRenderMap();
+
+      // === NEW TIMELINE CODE: re-render timeline chart
+      renderTimelineChart();
+    });
+
+    // -------------------------------------------------------------------
+    // 10) Render the map
+    // -------------------------------------------------------------------
+    function renderMap() {
+      console.log('Rendering map...');
+      if (!geoJsonData || postcodes.length === 0 || filteredSurveyData.length === 0) {
+        console.log('Data not sufficient to render map.');
+        return;
+      }
+
+      // Reset respondent counts
+      wardRespondentCounts = {};
+
+      // 1) Process online data (postcode or ward)
+      filteredSurveyData.forEach(function(row) {
+        const rawInput = (row["Please tell us your postcode:"] || '').trim();
+        if (!rawInput) return;
+
+        // First try matching as a postcode
+        let matchedWard = postcodes.find(
+          p => p.postcode?.toLowerCase() === rawInput.toLowerCase()
+        );
+
+        // If no match, try matching as a ward name
+        if (!matchedWard) {
+          matchedWard = postcodes.find(
+            p => p.ward_name?.toLowerCase() === rawInput.toLowerCase()
+          );
+        }
+
+        // If either found, increment that ward
+        if (matchedWard) {
+          const wardName = matchedWard.ward_name;
+          wardRespondentCounts[wardName] = (wardRespondentCounts[wardName] || 0) + 1;
+        }
+      });
+
+      // 2) Process paper data (Postcode or ward)
+      if (!isAnyFilterActive()) {
+        paperDemographics.forEach(function(row) {
+          if (row.Question?.trim().toLowerCase() === "postcode") {
+            const paperInput = (row.Group || '').trim();
+            const count = parseInt(row.Count || "0", 10);
+
+            let matchedWard = postcodes.find(
+              p => p.postcode?.toLowerCase() === paperInput.toLowerCase()
+            );
+            if (!matchedWard) {
+              matchedWard = postcodes.find(
+                p => p.ward_name?.toLowerCase() === paperInput.toLowerCase()
+              );
+            }
+
+            if (matchedWard) {
+              const wardName = matchedWard.ward_name;
+              wardRespondentCounts[wardName] = (wardRespondentCounts[wardName] || 0) + count;
+            }
+          }
+        })};
+
+      console.log('Ward respondent counts with paper data:', wardRespondentCounts);
+
+      // Clear existing layers
+      map.eachLayer(function(layer) {
+        if (layer instanceof L.GeoJSON) {
+          map.removeLayer(layer);
+        }
+      });
+
+      // Update total responses in the info box
+      document.getElementById('total-responses').textContent = surveyData.length - 1;
+
+      // Render the wards
+      var geoJsonLayer = L.geoJson(geoJsonData, {
+        style: function(feature) {
+          var wardName = feature.properties.WD13NM;
+          var count = wardRespondentCounts[wardName] || 0;
+          var fillColor = count > 10 ? '#006400' :
+                          count > 5  ? '#228B22' :
+                          count > 2  ? '#32CD32' :
+                          count > 0  ? '#7FFF00' :
+                                       '#dbffa5';
+          return {
+            fillColor: fillColor,
+            weight: 2,
+            opacity: 1,
+            color: 'white',
+            dashArray: '3',
+            fillOpacity: 0.7
+          };
+        },
+        onEachFeature: function(feature, layer) {
+          var wardName = feature.properties.WD13NM;
+          var count = wardRespondentCounts[wardName] || 0;
+          //layer.bindPopup('<b>' + wardName + '</b><br>Respondents: ' + count);
+          // Build a small HTML string for the popup
+          var popupHtml = `
+              <b>${wardName}</b><br>
+              Respondents: ${count}<br><br>
+              <!-- Our new button calls the drillDownWard() function -->
+              <button
+                style="background: #0069D9; color: white; padding: 4px 8px; border: none; border-radius: 4px;"
+                onclick="drillDownWard('${wardName}')"
+              >
+                Drill-Down
+              </button>
+            `;
+          layer.bindPopup(popupHtml);
+          
+
+          // Add a tooltip to show the count as a label on the map
+          layer.bindTooltip(
+            `${count}`, // The number of responses
+            {
+              permanent: true, // Makes the tooltip always visible
+              direction: "center", // Centers the label
+              className: "ward-tooltip", // Add a custom class for styling if needed
+            }
+          );
+        }
+      }).addTo(map);
+
+      // Remove existing legend if any
+      if (map.legendControl) {
+        map.removeControl(map.legendControl);
+      }
+
+      // Add legend
+      var legend = L.control({position: 'topright'});
+      legend.onAdd = function(map) {
+        var div = L.DomUtil.create('div', 'p-2 bg-white rounded-md shadow text-sm');
+        div.innerHTML += '<div class="mb-1"><span class="inline-block w-4 h-4 mr-2" style="background: #006400;"></span> > 10 respondents</div>';
+        div.innerHTML += '<div class="mb-1"><span class="inline-block w-4 h-4 mr-2" style="background: #228B22;"></span> 6 - 10 respondents</div>';
+        div.innerHTML += '<div class="mb-1"><span class="inline-block w-4 h-4 mr-2" style="background: #32CD32;"></span> 3 - 5 respondents</div>';
+        div.innerHTML += '<div class="mb-1"><span class="inline-block w-4 h-4 mr-2" style="background: #7FFF00;"></span> 1 - 2 respondents</div>';
+        div.innerHTML += '<div class="mb-1"><span class="inline-block w-4 h-4 mr-2" style="background: #dbffa5;"></span> 0 respondents</div>';
+        return div;
+      };
+
+      legend.addTo(map);
+      map.legendControl = legend;
+
+      console.log('Map rendered successfully.');
+    }
+
+    // -------------------------------------------------------------------
+    // 11) Radar chart arrays + rendering
+    // -------------------------------------------------------------------
+    var radarQuestions = [
+      "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Tacking Climate Action and Air Quality Action Together",
+      "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Active Travel and Transport",
+      "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Planning and Development",
+      "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Community Engagement and Education: Empowering Residents to Improve Air Quality",
+      "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Our Green Spaces and Amenities",
+      "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: The Future of Air Pollution in Richmond"
+    ];
+    var radarLabels = [
+      "Tackling Climate Action and Air Quality",
+      "Active Travel and Transport",
+      "Planning and Development",
+      "Community Engagement and Education",
+      "Our Green Spaces and Amenities",
+      "The Future of Air Pollution"
+    ];
+
+    var overallRadarQuestions = [
+      "To what extent do you agree or disagree with the overall strategy of targeting action on the areas of highest pollution and exposure, and the groups of people who will most benefit from reduced air pollution exposure?",
+      "To what extent do you agree or disagree with the locations targeted for action?",
+      "To what extent do you agree or disagree with the actions proposed in these target locations?",
+      "To what extent do you agree or disagree with the transport measures outlined for the target locations?",
+      "To what extent do you agree or disagree with the groups of people targeted for action?"
+    ];
+    var overallRadarLabels = [
+      "Overall Strategy",
+      "Locations Targeted",
+      "Actions Proposed",
+      "Transport Measures",
+      "Groups Targeted"
+    ];
+
+    function renderRadarChart() {
+      console.log('Rendering radar chart...');
+      if (filteredSurveyData.length === 0) {
+        console.log('No data to render radar chart.');
+        return;
+      }
+
+      var scores = [];
+      radarQuestions.forEach(function(question) {
+        var totalScore = 0;
+        var respondentCount = 0;
+        filteredSurveyData.forEach(function(row) {
+          var response = (row[question] || '').trim().toLowerCase();
+          var score = 0;
+          switch (response) {
+            case 'strongly agree': score = 3; break;
+            case 'agree': score = 1; break;
+            case 'neither agree nor disagree':
+            case 'neither agree or disagree':
+              score = 0; break;
+            case 'disagree': score = -1; break;
+            case 'strongly disagree': score = -3; break;
+            default: score = 0;
+          }
+          totalScore += score;
+          respondentCount++;
+        });
+        var averageScore = respondentCount > 0 ? totalScore / respondentCount : 0;
+        scores.push(averageScore);
+      });
+
+      var radarChartContainer = document.createElement('div');
+      radarChartContainer.className = 'radar-chart-container bg-white rounded-lg shadow p-4 w-full md:w-1/2';
+      radarChartContainer.innerHTML = '<h4 class="text-lg font-semibold mb-2">Average Scores for Themes</h4><canvas id="radarChart"></canvas>';
+      document.getElementById('radar-charts').appendChild(radarChartContainer);
+
+      var ctx = document.getElementById('radarChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: radarLabels,
+          datasets: [{
+            label: 'Average Score',
+            data: scores,
+            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            pointBackgroundColor: 'rgba(54, 162, 235, 1)'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          aspectRatio: 10/8,
+          scales: {
+            r: {
+              suggestedMin: 0,
+              suggestedMax: 2,
+              ticks: {
+                stepSize: 1,
+                backdropColor: 'transparent'
+              },
+              angleLines: { color: '#ccc' },
+              grid: { color: '#ccc' },
+              pointLabels: { font: { size: 12 } }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              formatter: (value) => value.toFixed(1)
+            }
+          }
+        }
+      });
+
+      console.log('Radar chart rendered.');
+    }
+
+    function renderOverallRadarChart() {
+      console.log('Rendering overall radar chart...');
+      if (filteredSurveyData.length === 0) {
+        console.log('No data to render overall radar chart.');
+        return;
+      }
+
+      var scores = [];
+      overallRadarQuestions.forEach(function(question) {
+        var totalScore = 0;
+        var respondentCount = 0;
+        filteredSurveyData.forEach(function(row) {
+          var response = (row[question] || '').trim().toLowerCase();
+          var score = 0;
+          switch (response) {
+            case 'strongly agree': score = 3; break;
+            case 'agree': score = 1; break;
+            case 'neither agree nor disagree':
+            case 'neither agree or disagree':
+              score = 0; break;
+            case 'disagree': score = -1; break;
+            case 'strongly disagree': score = -3; break;
+            default: score = 0;
+          }
+          totalScore += score;
+          respondentCount++;
+        });
+        var averageScore = respondentCount > 0 ? totalScore / respondentCount : 0;
+        scores.push(averageScore);
+      });
+
+      var overallRadarChartContainer = document.createElement('div');
+      overallRadarChartContainer.className = 'radar-chart-container bg-white rounded-lg shadow p-4 w-full md:w-1/2';
+      overallRadarChartContainer.innerHTML = '<h4 class="text-lg font-semibold mb-2">Overall Agreement</h4><canvas id="overallRadarChart"></canvas>';
+      document.getElementById('radar-charts').appendChild(overallRadarChartContainer);
+
+      var ctx = document.getElementById('overallRadarChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: overallRadarLabels,
+          datasets: [{
+            label: 'Average Score',
+            data: scores,
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            pointBackgroundColor: 'rgba(255, 99, 132, 1)'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          aspectRatio: 10/8,
+          scales: {
+            r: {
+              suggestedMin: 0,
+              suggestedMax: 2,
+              ticks: {
+                stepSize: 1,
+                backdropColor: 'transparent'
+              },
+              angleLines: { color: '#ccc' },
+              grid: { color: '#ccc' },
+              pointLabels: { font: { size: 12 } }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              formatter: (value) => value.toFixed(1)
+            }
+          }
+        }
+      });
+
+      console.log('Overall radar chart rendered.');
+    }
+
+    // -------------------------------------------------------------------
+    // 12) Render bar charts for opinions
+    // -------------------------------------------------------------------
+    function renderSurveyCharts() {
+      console.log('Rendering survey charts...');
+      if (filteredSurveyData.length === 0) {
+        console.log('No data to render survey charts.');
+        return;
+      }
+
+      // Clear existing radar charts
+      document.getElementById('radar-charts').innerHTML = '';
+      renderOverallRadarChart();
+      renderRadarChart();
+
+      // Clear existing bar charts
+      document.getElementById('charts').innerHTML = '';
+
+      var overallRadarQuestions = [
+        "To what extent do you agree or disagree with the overall strategy of targeting action on the areas of highest pollution and exposure, and the groups of people who will most benefit from reduced air pollution exposure?",
+        "To what extent do you agree or disagree with the locations targeted for action?",
+        "To what extent do you agree or disagree with the actions proposed in these target locations?",
+        "To what extent do you agree or disagree with the transport measures outlined for the target locations?",
+        "To what extent do you agree or disagree with the groups of people targeted for action?"
+      ];
+
+      var radarQuestions = [
+        "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Tacking Climate Action and Air Quality Action Together",
+        "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Active Travel and Transport",
+        "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Planning and Development",
+        "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Community Engagement and Education: Empowering Residents to Improve Air Quality",
+        "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: Our Green Spaces and Amenities",
+        "To what extent do you agree or disagree that the following themes should be focussed on in the action plan: The Future of Air Pollution in Richmond"
+      ];
+
+      var agreeDisagreeQuestions = [...overallRadarQuestions, ...radarQuestions];
+
+      var overallRadarLabels = [
+        "Overall Strategy",
+        "Locations Targeted",
+        "Actions Proposed",
+        "Transport Measures",
+        "Groups Targeted"
+      ];
+      var radarLabels = [
+        "Tackling Climate Action and Air Quality",
+        "Active Travel and Transport",
+        "Planning and Development",
+        "Community Engagement and Education",
+        "Our Green Spaces and Amenities",
+        "The Future of Air Pollution"
+      ];
+      var chartTitles = [...overallRadarLabels, ...radarLabels];
+
+      agreeDisagreeQuestions.forEach(function(question, index) {
+        var agreeDisagreeCounts = {
+          'Strongly Disagree': 0,
+          'Disagree': 0,
+          'Neither Agree nor Disagree': 0,
+          'Agree': 0,
+          'Strongly Agree': 0,
+          'Not Answered': 0
+        };
+
+        filteredSurveyData.forEach(function(row) {
+          var response = (row[question] || '').trim().toLowerCase();
+          switch (response) {
+            case 'strongly agree': agreeDisagreeCounts['Strongly Agree']++; break;
+            case 'agree': agreeDisagreeCounts['Agree']++; break;
+            case 'neither agree nor disagree':
+            case 'neither agree or disagree':
+              agreeDisagreeCounts['Neither Agree nor Disagree']++; break;
+            case 'disagree': agreeDisagreeCounts['Disagree']++; break;
+            case 'strongly disagree': agreeDisagreeCounts['Strongly Disagree']++; break;
+            case 'not answered':
+            case "don't know / no opinion":
+            case 'prefer not to say':
+              agreeDisagreeCounts['Not Answered']++; break;
+            default:
+              agreeDisagreeCounts['Not Answered']++;
+          }
+        });
+
+        // Create chart container
+        var chartContainer = document.createElement('div');
+        chartContainer.className = 'chart-container bg-white rounded-lg shadow p-4 w-full md:w-[32rem]';
+        chartContainer.innerHTML = '<h4 class="text-lg font-semibold mb-2">' + chartTitles[index] + '</h4><canvas id="chart' + index + '"></canvas>';
+        document.getElementById('charts').appendChild(chartContainer);
+
+        // Create chart data
+        var ctx = document.getElementById('chart' + index).getContext('2d');
+        new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: [
+              'Strongly Disagree',
+              'Disagree',
+              'Neither Agree nor Disagree',
+              'Agree',
+              'Strongly Agree',
+              'Not Answered'
+            ],
+            datasets: [{
+              label: '# of Responses',
+              data: [
+                agreeDisagreeCounts['Strongly Disagree'],
+                agreeDisagreeCounts['Disagree'],
+                agreeDisagreeCounts['Neither Agree nor Disagree'],
+                agreeDisagreeCounts['Agree'],
+                agreeDisagreeCounts['Strongly Agree'],
+                agreeDisagreeCounts['Not Answered']
+              ],
+              backgroundColor: [
+                '#F44336',
+                '#FF5722',
+                '#2196F3',
+                '#8BC34A',
+                '#4CAF50',
+                '#9E9E9E'
+              ],
+              borderColor: [
+                '#D32F2F',
+                '#E64A19',
+                '#1976D2',
+                '#689F38',
+                '#388E3C',
+                '#616161'
+              ],
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              datalabels: {
+                display: function() {
+                  return document.body.classList.contains('pdf-resize');
+                },
+                anchor: 'end',
+                align: 'end',
+                color: 'black',
+                font: {
+                  weight: 'bold'
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                suggestedMax: Math.max(...Object.values(agreeDisagreeCounts)) + 5
+              }
+            }
+          }
+        });
+      });
+
+      console.log('Survey charts rendered.');
+    }
+
+    // -------------------------------------------------------------------
+    // 13) The revised Respondent Characteristics function
+    // -------------------------------------------------------------------
+    function renderRespondentCharacteristics() {
+      console.log('Rendering respondent characteristics charts...');
+      // Clear existing respondent charts
+      document.getElementById('respondent-charts').innerHTML = '';
+
+      if (filteredSurveyData.length === 0) {
+        console.log('No data to render respondent characteristics charts.');
+        return;
+      }
+
+      // The four questions we want to chart
+      var respondentQuestions = [
+        "What is the main capacity in which you are responding to this consultation?",
+        "What was your age last birthday?",
+        "What is your sex?",
+        "What is your ethnic group?"
+      ];
+
+      // Mapping from dashboard question to borough demographics key
+      const questionToBoroughKey = {
+        "What was your age last birthday?": "Age",
+        "What is your sex?": "Sex",
+        "What is your ethnic group?": "Ethnicity"
+      };
+
+      respondentQuestions.forEach(function(question, index) {
+        // (A) Gather raw counts from online + paper
+        let respondentCounts = {};
+        let totalRawCount = 0;
+
+        // 1) from the filtered (online) data
+        filteredSurveyData.forEach(function(row) {
+          let raw = (row[question] || '').trim().toLowerCase();
+
+          // Lump blank/prefer not => "no answer"
+          if (
+            (question === "What was your age last birthday?" ||
+             question === "What is your sex?" ||
+             question === "What is your ethnic group?") &&
+             (raw === '' || raw === 'prefer not to say' || raw === 'not answered')
+          ) {
+            raw = 'no answer';
+          }
+
+          // Map to bracket if relevant
+          let mapped = raw;
+          if (questionToBoroughKey[question]) {
+            if (question === "What was your age last birthday?") {
+              mapped = mapAgeToBracket(raw);
+            } else if (question === "What is your sex?") {
+              mapped = mapSexToCensusCategory(raw);
+            } else if (question === "What is your ethnic group?") {
+              mapped = mapEthnicityToCensusCategory(raw);
+            }
+          } else {
+            if (mapped === '' || mapped.includes('no answer')) {
+              mapped = 'No Answer';
+            } else {
+              mapped = row[question].trim();
+            }
+          }
+
+          respondentCounts[mapped] = (respondentCounts[mapped] || 0) + 1;
+          totalRawCount++;
+        });
+
+        // 2) from the paper-based data
+        paperDemographics.forEach(pRow => {
+          let dashKey = null;
+          if (pRow.Question === "Age" && question === "What was your age last birthday?") {
+            dashKey = "Age";
+          } else if (pRow.Question === "Sex" && question === "What is your sex?") {
+            dashKey = "Sex";
+          } else if (pRow.Question === "Ethnicity" && question === "What is your ethnic group?") {
+            dashKey = "Ethnicity";
+          }
+          // skip if no match
+          if (!dashKey) return;
+
+          // map bracket
+          let mapped;
+          if (dashKey === "Age") {
+            mapped = mapAgeToBracket(pRow.Group);
+          } else if (dashKey === "Sex") {
+            mapped = mapSexToCensusCategory(pRow.Group);
+          } else if (dashKey === "Ethnicity") {
+            mapped = mapEthnicityToCensusCategory(pRow.Group);
+          }
+
+          let count = parseInt(pRow.Count || "0", 10);
+          respondentCounts[mapped] = (respondentCounts[mapped] || 0) + count;
+          totalRawCount += count;
+        });
+
+        // (B) Separate out "No Answer" from real categories
+        let noAnswerCount = 0;
+        if (respondentCounts['No Answer']) {
+          noAnswerCount += respondentCounts['No Answer'];
+        }
+        if (respondentCounts['No Answer / Other']) {
+          noAnswerCount += respondentCounts['No Answer / Other'];
+        }
+
+        // validAnswers = total raw minus noAnswer lumps
+        let validAnswers = totalRawCount - noAnswerCount;
+
+        // Build a new object for only real categories
+        let validCounts = {};
+        for (let cat in respondentCounts) {
+          if (cat.toLowerCase().includes('no answer')) {
+            continue;
+          }
+          validCounts[cat] = respondentCounts[cat];
+        }
+
+        // (C) Convert real categories to percentages 
+        for (let cat in validCounts) {
+          if (validAnswers > 0) {
+            validCounts[cat] = (validCounts[cat] / validAnswers) * 100;
+          } else {
+            validCounts[cat] = 0;
+          }
+        }
+
+        // (D) Sort categories & prepare chart container
+        let sortedLabels = Object.keys(validCounts);
+        if (question === "What was your age last birthday?") {
+          // bracket order
+          const bracketOrder = ["<20","20-24","25-34","35-44","45-54","55-64","65-75","75+"];
+          sortedLabels.sort((a,b) => bracketOrder.indexOf(a) - bracketOrder.indexOf(b));
+        } else {
+          sortedLabels.sort();
+        }
+
+        // Create a chart container
+        let chartContainer = document.createElement('div');
+        chartContainer.className = 'chart-container bg-white rounded-lg shadow p-4 w-full md:w-[32rem]';
+        let answersNote = `<p class="text-sm text-gray-500 mb-2"><i>Answers given: ${validAnswers}</i></p>`;
+        chartContainer.innerHTML = `<h4 class="text-lg font-semibold mb-1">${question}</h4>${answersNote}<canvas id="respondentChart${index}"></canvas>`;
+        document.getElementById('respondent-charts').appendChild(chartContainer);
+
+        // Check if there's borough data
+        let boroughKey = questionToBoroughKey[question];
+        let hasBoroughData = boroughKey && boroughDemographics[boroughKey];
+
+        // (E) If borough data: side-by-side bars
+        if (hasBoroughData) {
+          let boroughCats = Object.keys(boroughDemographics[boroughKey]);
+          // combine sets
+          let finalLabels = new Set([...sortedLabels, ...boroughCats]);
+          finalLabels = Array.from(finalLabels);
+
+          // re-sort if it's Age
+          if (question === "What was your age last birthday?") {
+            const bracketOrder = ["<20","20-24","25-34","35-44","45-54","55-64","65-75","75+"];
+            finalLabels.sort((a,b) => bracketOrder.indexOf(a) - bracketOrder.indexOf(b));
+          } else {
+            finalLabels.sort();
+          }
+
+          let surveyDataVals = [];
+          let boroughDataVals = [];
+          finalLabels.forEach(cat => {
+            surveyDataVals.push(validCounts[cat] || 0);
+            boroughDataVals.push(boroughDemographics[boroughKey][cat] || 0);
+          });
+
+          let ctx = document.getElementById(`respondentChart${index}`).getContext('2d');
+          new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: finalLabels,
+              datasets: [
+                {
+                  label: 'Survey (%)',
+                  data: surveyDataVals,
+                  backgroundColor: '#2196F3'
+                },
+                {
+                  label: 'Borough (%)',
+                  data: boroughDataVals,
+                  backgroundColor: '#D7E0A6'
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                datalabels: {
+                  display: function() {
+                    return document.body.classList.contains('pdf-resize');
+                  },
+                  anchor: 'end',
+                  align: 'end',
+                  color: 'black',
+                  font: {
+                    weight: 'bold'
+                  },
+                  formatter: (value) => value.toFixed(1) + '%'
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  title: {
+                    display: true,
+                    text: 'Percentage (%)'
+                  }
+                },
+                x: { 
+                  stacked: false,
+                  barPercentage: 1,
+                  categoryPercentage: 1
+                }
+              }
+            }
+          });
+        } else {
+          // (F) No borough data => single bar
+          let chartData = sortedLabels.map(cat => validCounts[cat]);
+          let ctx2 = document.getElementById(`respondentChart${index}`).getContext('2d');
+          new Chart(ctx2, {
+            type: 'bar',
+            data: {
+              labels: sortedLabels,
+              datasets: [{
+                label: 'Survey (%)',
+                data: chartData,
+                backgroundColor: '#2196F3'
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                datalabels: {
+                  display: function() {
+                    return document.body.classList.contains('pdf-resize');
+                  },
+                  anchor: 'end',
+                  align: 'end',
+                  color: 'black',
+                  font: {
+                    weight: 'bold'
+                  },
+                  formatter: (value) => value.toFixed(1) + '%'
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  max: 100,
+                  title: {
+                    display: true,
+                    text: 'Percentage (%)'
+                  }
+                }
+              }
+            }
+          });
+        }
+      });
+      console.log('Respondent characteristics charts rendered (excluding No Answer).');
+    }
+
+    // -------------------------------------------------------------------
+    // 14) Page resize buttons
+    // -------------------------------------------------------------------
+    document.getElementById('resizePage').addEventListener('click', function() {
+      document.body.style.width = '800px';
+      document.body.style.margin = '0 auto';
+      document.body.classList.add('pdf-resize');
+    });
+
+    document.getElementById('restorePage').addEventListener('click', function() {
+      document.body.style.width = '100%';
+      document.body.style.margin = '0 auto';
+      document.body.classList.remove('pdf-resize');
+    });
+
+    // === NEW TIMELINE CODE START ===
+    let timelineChart = null; // We'll store the Chart.js instance here
+
+    // 1) Helper to remove prefix from question text
+    function removePrefix(text) {
+      return text
+        .replace(/To what extent do you agree or disagree with the\s*/i, '')
+        .replace(/To what extent do you agree or disagree that the following themes should be focussed on in the action plan:\s*/i, '')
+        .trim();
+    }
+
+    // A function to build the question dropdown for timeline
+    function buildTimelineQuestionDropdown() {
+      const dropdown = document.getElementById('timelineQuestionSelector');
+
+      // Clear existing options except the first
+      while (dropdown.options.length > 1) {
+        dropdown.remove(1);
+      }
+
+      // Gather all possible "agree/disagree" style questions you want to appear
+      // We'll combine the same arrays used for the radar charts
+      const allPositivityQuestions = [
+        ...overallRadarQuestions,
+        ...radarQuestions
+      ];
+
+      // Add them as options
+      allPositivityQuestions.forEach(q => {
+        const opt = document.createElement('option');
+        opt.value = q;
+        opt.textContent = removePrefix(q);
+        dropdown.appendChild(opt);
+      });
+
+      // On change => renderTimelineChart
+      dropdown.addEventListener('change', () => {
+        renderTimelineChart();
+      });
+    }
+
+    // Helper: parse date string to a Date object (return null if invalid)
+    function parseDateFromRow(row) {
+      const raw = row['Created Date']?.trim();
+      if (!raw) return null;
+
+      let dateObj = new Date(raw);
+      if (isNaN(dateObj)) {
+        // Try splitting by space or slash if needed
+        const parts = raw.split(' ');
+        const datePart = parts[0].split('/');
+        if (datePart.length === 3) {
+          const dd = parseInt(datePart[0], 10);
+          const mm = parseInt(datePart[1], 10) - 1; // zero-based month
+          const yyyy = parseInt(datePart[2], 10);
+          dateObj = new Date(yyyy, mm, dd);
+        }
+      }
+      if (isNaN(dateObj)) return null; // still invalid
+      return dateObj;
+    }
+
+    // Helper: find Monday of a given date
+    function getMonday(d) {
+      const date = new Date(d);
+      const day = date.getDay(); // Sunday=0, Monday=1...
+      const diff = (day + 6) % 7; // how many days back to get to Monday
+      date.setDate(date.getDate() - diff);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    }
+
+    // Format date as DD/MM/YY
+    function formatDateDDMMYY(d) {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = String(d.getFullYear()).slice(-2);
+      return `${dd}/${mm}/${yy}`;
+    }
+
+    // Returns an array of all Monday dates from earliest Monday to last Monday (inclusive)
+    function getAllMondayDatesBetween(start, end) {
+      const mondays = [];
+      let current = new Date(start);
+      while (current <= end) {
+        mondays.push(new Date(current));
+        current.setDate(current.getDate() + 7);
+      }
+      return mondays;
+    }
+
+    // For a given date, find which Monday is the "start" of that week
+    function getWeekIndex(date, allMondays) {
+      let idx = -1;
+      for (let i = 0; i < allMondays.length; i++) {
+        if (allMondays[i] <= date) {
+          idx = i;
+        } else {
+          break;
+        }
+      }
+      return idx;
+    }
+
+    // Function to compute positivity score for a single response
+    function getPositivityScore(response) {
+      switch (response) {
+        case 'strongly agree': return 3;
+        case 'agree': return 1;
+        case 'disagree': return -1;
+        case 'strongly disagree': return -3;
+        default: return null; // neither/blank => ignore
+      }
+    }
+
+    function renderTimelineChart() {
+      // Destroy existing chart if any
+      if (timelineChart) {
+        timelineChart.destroy();
+      }
+
+      if (filteredSurveyData.length === 0) {
+        // Clear chart area or show "No data" message
+        const ctx = document.getElementById('timelineChart').getContext('2d');
+        ctx.clearRect(0, 0, 800, 400);
+        return;
+      }
+
+      // Step 1) Collect all valid dates
+      let validDates = [];
+      filteredSurveyData.forEach(row => {
+        const d = parseDateFromRow(row);
+        if (d) {
+          validDates.push({ date: d, row });
+        }
+      });
+      if (validDates.length === 0) {
+        // No valid dates
+        const ctx = document.getElementById('timelineChart').getContext('2d');
+        ctx.clearRect(0, 0, 800, 400);
+        return;
+      }
+
+      // Step 2) Find earliest & latest date
+      validDates.sort((a,b) => a.date - b.date);
+      const earliest = validDates[0].date;
+      const latest = validDates[validDates.length - 1].date;
+
+      // Step 3) Get Monday of earliest date => "Week 1"
+      const firstMonday = getMonday(earliest);
+
+      // Step 4) Get Monday of the latest date
+      const lastMondayOfRange = getMonday(latest);
+
+      // Step 5) Build an array of all Monday dates from firstMonday to lastMondayOfRange
+      const allMondays = getAllMondayDatesBetween(firstMonday, lastMondayOfRange);
+
+      // Step 6) Prepare data structures
+      const weeksData = allMondays.map(m => {
+        return {
+          mondayDate: new Date(m),
+          count: 0,
+          positivitySum: 0,
+          positivityCount: 0
+        };
+      });
+
+      // Step 7) Check if user selected a question -> line chart or bar chart
+      const selectedQuestion = document.getElementById('timelineQuestionSelector').value;
+
+      // Step 8) Fill the weeksData
+      validDates.forEach(({ date, row }) => {
+        const weekIdx = getWeekIndex(date, allMondays);
+        if (weekIdx < 0) return;
+
+        weeksData[weekIdx].count++;
+
+        if (selectedQuestion) {
+          const rawResp = (row[selectedQuestion] || '').trim().toLowerCase();
+          const score = getPositivityScore(rawResp);
+          if (score !== null) {
+            weeksData[weekIdx].positivitySum += score;
+            weeksData[weekIdx].positivityCount++;
+          }
+        }
+      });
+
+      // Step 9) Prepare chart labels
+      const chartLabels = weeksData.map((w, i) => {
+        const mainLabel = `Week ${i + 1}`;
+        const subLabel = formatDateDDMMYY(w.mondayDate);
+        return `${mainLabel}\n${subLabel}`;
+      });
+
+      // Step 10) Build the dataset(s)
+      let chartType = 'bar';
+      let chartData = [];
+      let yLabel = '';
+
+      if (!selectedQuestion) {
+        // Show bar chart of weekly response counts
+        chartType = 'bar';
+        chartData = weeksData.map(w => w.count);
+        yLabel = 'Number of Responses';
+      } else {
+        // Show line chart of average positivity
+        chartType = 'line';
+        chartData = weeksData.map(w => {
+          if (w.positivityCount > 0) {
+            return w.positivitySum / w.positivityCount;
+          }
+          return null;
+        });
+        yLabel = 'Average Positivity Score';
+      }
+
+      // Step 11) Render the Chart
+      const ctx = document.getElementById('timelineChart').getContext('2d');
+      timelineChart = new Chart(ctx, {
+        type: chartType,
+        data: {
+          labels: chartLabels,
+          datasets: [
+            {
+              label: yLabel,
+              data: chartData,
+              backgroundColor: chartType === 'bar' ? '#2196F3' : 'rgba(54, 162, 235, 0.2)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 2,
+              fill: chartType === 'line'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            datalabels: {
+              display: function() {
+                return document.body.classList.contains('pdf-resize');
+              },
+              anchor: 'end',
+              align: 'top',
+              color: 'black',
+              font: {
+                weight: 'bold'
+              },
+              formatter: (value) => value.toFixed(1)
+            },
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: yLabel
+              },
+              suggestedMin: chartType === 'line' ? -3 : 0,
+              suggestedMax: chartType === 'line' ? 3 : undefined
+            },
+            x: {
+              ticks: {
+                callback: function(value) {
+                  return this.getLabelForValue(value);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    // === NEW TIMELINE CODE END ===
+
+  </script>
+
+</body>
+</html>
